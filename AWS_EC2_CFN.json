@@ -1,0 +1,126 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS EC2 Pop-up Sandbox Environment",
+    "Parameters": {
+        "LatestAmiId": {
+            "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+            "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterLabels": {
+                "LatestAmiId": {
+                    "default": "The AMI ID of the AMI you wish to launch your instance"
+                }
+            }
+        }
+    },
+    "Resources": {
+      "EC2AwsCLIRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "RoleName": {"Fn::Sub": "CFN-${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-EC2-Role"},
+          "AssumeRolePolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "sts:AssumeRole"
+                      ],
+                      "Principal": {
+                          "Service": [
+                              "ec2.amazonaws.com"
+                          ]
+                      }
+                  }
+              ]
+          }
+        }
+      },
+      "AssumeRolePolicy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+            "PolicyName": {"Fn::Sub": "CFN-${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-AssumeRolePolicy"},
+            "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "Statement1",
+                        "Effect": "Allow",
+                        "Action": [
+                            "sts:AssumeRole"
+                        ],
+                        "Resource": {"Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/*"}
+                    }
+                ]
+            },
+            "Roles": [{"Ref": "EC2AwsCLIRole"}]
+        }
+      },
+      "EC2AwsCLIInstanceProfile": {
+        "Type": "AWS::IAM::InstanceProfile",
+        "Properties": {
+          "Roles": [{
+            "Ref": "EC2AwsCLIRole"
+          }]
+        }
+      },
+      "EC2AwsCLIKeypair": {
+        "Type": "AWS::EC2::KeyPair",
+        "Properties": {
+          "KeyName": {"Fn::Sub": "CFN-${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-EC2-keypair"},
+          "KeyType": "ed25519"
+        }
+      },
+      "EC2AWSCLISecurityGroup": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupName": {"Fn::Sub": "CFN-${AWS::StackName}-${AWS::AccountId}-${AWS::Region}-EC2-SecurityGroup"},
+          "GroupDescription": "Allow SSH to EC2 instance",
+          "SecurityGroupIngress": [{
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          }]
+        }
+      },
+      "Ec2Instance": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+            "InstanceType": "t2.micro",
+            "IamInstanceProfile": {"Ref": "EC2AwsCLIInstanceProfile"},
+            "KeyName": {"Ref": "EC2AwsCLIKeypair"},
+            "SecurityGroupIds": [{"Fn::GetAtt": ["EC2AWSCLISecurityGroup", "GroupId"]}],
+            "ImageId": {"Ref": "LatestAmiId"},
+            "UserData": "IyEvYmluL2Jhc2gKCm1rZGlyIC9ob21lL2VjMi11c2VyL2JpbgpjYXQgPi9ob21lL2VjMi11c2VyL2Jpbi9hc3IgPDxBU1JfRU9GCiMhL2Jpbi9iYXNoCgppZiBbWyBcJCMgLW5lIDEgXV0KdGhlbgogICAgZWNobyAiSW52YWxpZCBwYXJhbWV0ZXJzLiBNdXN0IHBhc3MgYSByb2xlIGFzIGFuIGFyZ3VtZW50LiIKICAgIGV4aXQgMQpmaQoKaWYgW1sgISAtZCB+Ly5hd3MgXV0KdGhlbgoJbWtkaXIgfi8uYXdzCmZpCgpybSAtZiB+Ly5hd3MvY29uZmlnCmNhdCA+fi8uYXdzL2NvbmZpZyA8PENPTkZJR19FT0YKW3Byb2ZpbGUgZGVmYXVsdF0Kcm9sZV9hcm4gPSBcJDEKY3JlZGVudGlhbF9zb3VyY2UgPSBFYzJJbnN0YW5jZU1ldGFkYXRhCkNPTkZJR19FT0YKQVNSX0VPRgoKY2htb2QgNzc3IC9ob21lL2VjMi11c2VyL2Jpbi9hc3IKCmVjaG8gInRoaXMgaXMgYSB0ZXN0IiA+IC9ob21lL2VjMi11c2VyL2ZpbGUudHh0",
+            "Tags": [
+              {"Key": "auto-delete", "Value": "no"},
+              {"Key": "auto-start", "Value": "yes"}
+            ]
+        }
+      },
+      "Ec2ElasticIp" : {
+        "Type": "AWS::EC2::EIP",
+        "Properties": {
+            "InstanceId": {"Ref": "Ec2Instance"}
+        }
+      }
+    },
+    "Outputs": {
+        "EC2IPv4Address": {
+            "Description": "Elastic IP address of the created EC2 Instance",
+            "Value": {
+                "Ref": "Ec2ElasticIp"
+            }
+        },
+        "SSMKeypairID": {
+          "Description": "ID of the SSH keypair",
+          "Value": {
+            "Fn::GetAtt": ["EC2AwsCLIKeypair", "KeyPairId"]
+          }
+        }
+    }
+}
